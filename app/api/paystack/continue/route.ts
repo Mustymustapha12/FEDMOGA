@@ -1,0 +1,2 @@
+import {database,hashToken} from '../../../lib';
+export async function GET(req:Request){const token=new URL(req.url).searchParams.get('token')||'';if(!/^[a-f0-9]{64}$/.test(token))return Response.json({error:'Invalid link'},{status:403});const hash=await hashToken(token);const p=await database().prepare("SELECT id,full_name as name,email,phone FROM payments WHERE token_hash=? AND status='SUCCESS' AND completed=0 AND token_expires_at>?").bind(hash,new Date().toISOString()).first();return p?Response.json(p):Response.json({error:'Expired or used link'},{status:403})}
