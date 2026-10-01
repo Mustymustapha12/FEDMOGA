@@ -1,5 +1,6 @@
 import { createCipheriv, createDecipheriv, randomBytes } from "node:crypto";
 import { database } from "../server/database";
+import { logFailure } from "../server/diagnostics";
 import { HttpError, digest } from "../server/security";
 export { database };
 export { currentAdmin, requireAdmin } from "../server/auth";
@@ -21,17 +22,10 @@ export async function putSetting(key: string, value: string, db = database()) {
 export function errorResponse(e: unknown) {
   if (e instanceof HttpError)
     return Response.json({ error: e.message }, { status: e.status });
-  console.error(
-    "FEDMOGA request failed:",
-    e instanceof Error ? e.name : "Unknown error",
-  );
-  return Response.json(
-    {
-      error:
-        "The request could not be completed. Check the server configuration or try again.",
-    },
-    { status: 500 },
-  );
+  return Response.json(logFailure(e), {
+    status: 503,
+    headers: { "Cache-Control": "no-store" },
+  });
 }
 function encryptionKey() {
   const raw = process.env.FEDMOGA_ENCRYPTION_KEY;

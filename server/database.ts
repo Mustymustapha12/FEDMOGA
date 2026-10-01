@@ -5,19 +5,37 @@ import mysql, {
   type RowDataPacket,
 } from "mysql2/promise";
 import { schema } from "./schema";
+import { ConfigurationError } from "./diagnostics";
 let pool: Pool | undefined;
 let ready: Promise<void> | undefined;
 export function getPool() {
   if (!pool) {
-    if (
-      !process.env.DB_USER ||
-      !process.env.DB_NAME ||
-      !process.env.DB_PASSWORD
-    )
-      throw new Error("Database is not configured");
+    const missing = ["DB_USER", "DB_NAME", "DB_PASSWORD"].filter(
+      (name) => !process.env[name],
+    );
+    if (missing.length)
+      throw new ConfigurationError(
+        "DB_CONFIG_MISSING",
+        "Required database environment variables are missing at runtime: " +
+          missing.join(", "),
+        missing,
+      );
+    const port = Number(process.env.DB_PORT || 3306);
+    if (!Number.isInteger(port) || port < 1 || port > 65535)
+      throw new ConfigurationError(
+        "DB_PORT_INVALID",
+        "DB_PORT must be a number between 1 and 65535",
+      );
     pool = mysql.createPool({
-      host: process.env.DB_HOST || "localhost",
-      port: Number(process.env.DB_PORT || 3306),
+      ...(process.env.DB_SOCKET
+        ? { socketPath: process.env.DB_SOCKET }
+        : {
+            host:
+              process.env.DB_HOST === "localhost"
+                ? "127.0.0.1"
+                : process.env.DB_HOST || "127.0.0.1",
+          }),
+      port,
       user: process.env.DB_USER,
       password: process.env.DB_PASSWORD,
       database: process.env.DB_NAME,

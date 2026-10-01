@@ -65,3 +65,16 @@ Unit tests run without a database. Database integration tests require a **dedica
 Admin sessions last eight hours, use HttpOnly/Secure/SameSite cookies in production and are revoked by password, role or active-status changes. Mutations require the exact configured origin. Login and recovery attempts are limited in MySQL. Admin changes write audit records. Simulated payment routes cannot authorize registration. Back up MySQL and the encryption key before updates. The admin screen currently shows the latest 500 payments and registrations; older records remain in MySQL.
 
 This conversion is suitable for deployment and acceptance testing on Hostinger Business. It has not been tested against your actual Hostinger account, SMTP mailbox or real Paystack credentials. It starts in test mode. Existing D1 preview records are not copied into MySQL; use a fresh database. Receipt PDFs and automated membership confirmation emails are not implemented in this edition.
+
+## Troubleshoot a successful build with failed login or checkout
+
+A successful build does not connect to MySQL or create the first administrator. Open `/api/health` after deployment. It now returns a safe error code and guidance, or `database: connected` with any missing setup variable names. It never returns credentials, hostnames, SQL statements or passwords. Runtime logs also record the safe error code.
+
+- `DB_CONFIG_MISSING`: listed variables are absent from the running app; edit Hostinger deployment environment variables and restart/redeploy. Build-time `.env` loading alone does not prove runtime values are present.
+- `ECONNREFUSED`: confirm the database endpoint. `localhost` now uses IPv4 `127.0.0.1`. If Hostinger support confirms local socket access, optionally set `DB_SOCKET=/var/lib/mysql/mysql.sock` (or the confirmed path); socket mode ignores DB_HOST/DB_PORT. Do not guess an external endpoint.
+- `ER_ACCESS_DENIED_ERROR`: use the complete prefixed MySQL username and the correct database password.
+- `ER_BAD_DB_ERROR`: use the complete prefixed database name.
+- `ER_TABLEACCESS_DENIED_ERROR`: the MySQL user needs permission to create and access the FEDMOGA tables.
+- `SUPER_ADMIN_CONFIG_MISSING`: set both initial Super Admin variables while the admins table is empty. Only remove the initial password after successful login.
+
+Once `/api/health` reports a connected database and `adminSetup: pending_first_login` without missing variables, sign in with the initial Super Admin credentials. Then configure Paystack test keys in Settings before attempting checkout. For any unresolved error, share the diagnostic JSON or safe error-code lines from Runtime logs, not your environment variable values.

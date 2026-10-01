@@ -1,3 +1,4 @@
+import { ConfigurationError } from "./diagnostics";
 import type { RowDataPacket } from "mysql2/promise";
 import { cookies } from "next/headers";
 import { randomBytes } from "node:crypto";
@@ -15,7 +16,24 @@ export async function bootstrapAdmin() {
   await ensureDatabase();
   const email = process.env.SUPER_ADMIN_EMAIL?.trim().toLowerCase(),
     password = process.env.SUPER_ADMIN_PASSWORD;
-  if (!email || !password) return;
+  if (!email || !password) {
+    const count = await database()
+      .prepare("SELECT count(*) AS n FROM admins")
+      .first<{ n: number }>();
+    if (count?.n === 0) {
+      const missing = ["SUPER_ADMIN_EMAIL", "SUPER_ADMIN_PASSWORD"].filter(
+        (name) => !process.env[name],
+      );
+      throw new ConfigurationError(
+        "SUPER_ADMIN_CONFIG_MISSING",
+        "Initial Super Admin credentials are missing. Set " +
+          missing.join(", ") +
+          " in Hostinger and restart.",
+        missing,
+      );
+    }
+    return;
+  }
   const connection = await getPool().getConnection();
   try {
     const [[lock]] = await connection.query<RowDataPacket[]>(
