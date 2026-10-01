@@ -1,2 +1,67 @@
-import {database,encryptSecret,errorResponse,requireAdmin} from '../../../lib';
-export async function POST(req:Request){try{await requireAdmin(true);const body=await req.json() as Record<string,any>,db=database();if(body.kind==='fee'){const fee=Number(body.fee);if(!Number.isInteger(fee)||fee<1||fee>10000000)throw Error('Enter a valid fee');await db.prepare('INSERT INTO settings(key,value) VALUES(?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value').bind('fee',String(fee)).run()}else if(body.kind==='paystack'){const mode=body.mode;if(mode!=='test'&&mode!=='live')throw Error('Choose test or live');const pub=String(body.publicKey||'').trim(),secret=String(body.secretKey||'').trim();if(pub&&!pub.startsWith(mode==='test'?'pk_test_':'pk_live_'))throw Error('Public key does not match mode');if(secret&&!secret.startsWith(mode==='test'?'sk_test_':'sk_live_'))throw Error('Secret key does not match mode');if(pub)await db.prepare('INSERT INTO settings(key,value) VALUES(?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value').bind('paystack_'+mode+'_public',pub).run();if(secret){const encrypted=await encryptSecret(secret);await db.prepare('INSERT INTO settings(key,value) VALUES(?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value').bind('paystack_'+mode+'_secret',encrypted).run()}if(body.activate===true){if(mode==='live')throw Error('Live activation is locked until production acceptance tests pass');await db.prepare('INSERT INTO settings(key,value) VALUES(?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value').bind('paystack_mode',mode).run()}}else if(body.kind==='form'){const form=body.form;if(!form||!Array.isArray(form.sections)||form.sections.length>20)throw Error('Invalid form');await db.prepare('INSERT INTO settings(key,value) VALUES(?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value').bind('form',JSON.stringify(form)).run()}else throw Error('Unknown setting');return Response.json({ok:true})}catch(e){return errorResponse(e)}}
+import {
+  encryptSecret,
+  errorResponse,
+  requireAdmin,
+  setting,
+  putSetting,
+} from "../../../lib";
+import { readJson, HttpError, appOrigin } from "../../../../server/security";
+import { audit, transaction } from "../../../../server/database";
+import { validateForm } from "../../../../server/form";
+export async function POST(req: Request) {
+  try {
+    const actor = await requireAdmin(true),
+      body = await readJson(req);
+    if (body.kind === "fee") {
+      const fee = Number(body.fee);
+      if (!Number.isInteger(fee) || fee < 1 || fee > 10000000)
+        throw new HttpError("Enter a fee between 1 and 10,000,000 naira");
+      await putSetting("fee", String(fee));
+    } else if (body.kind === "paystack") {
+      const mode = body.mode;
+      if (mode !== "test" && mode !== "live")
+        throw new HttpError("Choose test or live");
+      const pub = String(body.publicKey || "").trim(),
+        secret = String(body.secretKey || "").trim();
+      if (pub && !new RegExp("^pk_" + mode + "_[A-Za-z0-9]{10,200}$").test(pub))
+        throw new HttpError("Public key does not match mode");
+      if (
+        secret &&
+        !new RegExp("^sk_" + mode + "_[A-Za-z0-9]{10,200}$").test(secret)
+      )
+        throw new HttpError("Secret key does not match mode");
+      const encrypted = secret ? await encryptSecret(secret) : "";
+      if (body.activate === true) {
+        if (
+          !(pub || (await setting("paystack_" + mode + "_public"))) ||
+          !(encrypted || (await setting("paystack_" + mode + "_secret")))
+        )
+          throw new HttpError("Save both keys before activating checkout");
+        if (
+          mode === "live" &&
+          (process.env.ALLOW_LIVE_PAYMENTS !== "true" ||
+            !appOrigin().startsWith("https://") ||
+            !process.env.SMTP_HOST ||
+            !process.env.SMTP_USER ||
+            !process.env.SMTP_PASSWORD ||
+            !process.env.SMTP_FROM)
+        )
+          throw new HttpError(
+            "Live checkout requires HTTPS, SMTP and ALLOW_LIVE_PAYMENTS=true after testing",
+          );
+      }
+      await transaction(async (db) => {
+        if (pub) await putSetting("paystack_" + mode + "_public", pub, db);
+        if (encrypted)
+          await putSetting("paystack_" + mode + "_secret", encrypted, db);
+        if (body.activate === true) await putSetting("paystack_mode", mode, db);
+      });
+    } else if (body.kind === "form") {
+      await putSetting("form", JSON.stringify(validateForm(body.form)));
+    } else throw new HttpError("Unknown setting");
+    await audit(actor.email, "settings." + String(body.kind));
+    return Response.json({ ok: true });
+  } catch (e) {
+    return errorResponse(e);
+  }
+}

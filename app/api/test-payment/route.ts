@@ -1,2 +1,9 @@
-import {database,errorResponse,setting} from '../../lib';
-export async function POST(req:Request){try{if(await setting('paystack_mode','simulation')!=='simulation')throw Error('Simulation is disabled while Paystack checkout is active');const {name,email,phone}=await req.json() as Record<string,any>;if(typeof name!=='string'||name.trim().length<2||typeof email!=='string'||!/^\S+@\S+\.\S+$/.test(email)||typeof phone!=='string'||phone.trim().length<7)throw Error('Enter valid payment details');const amount=Number(await setting('fee','5000'));const id='TEST-'+crypto.randomUUID();await database().prepare('INSERT INTO payments(id,full_name,email,phone,amount,status,created_at,completed) VALUES(?,?,?,?,?,?,?,0)').bind(id,name.trim().slice(0,160),email.trim().toLowerCase().slice(0,255),phone.trim().slice(0,30),amount,'TEST_PAID',new Date().toISOString()).run();return Response.json({id,amount})}catch(e){return errorResponse(e)}}
+// Legacy preview endpoint deliberately cannot grant access on the public deployment.
+export async function POST() {
+  return Response.json(
+    {
+      error: "Simulated payments are unavailable. Use Paystack test checkout.",
+    },
+    { status: 410 },
+  );
+}

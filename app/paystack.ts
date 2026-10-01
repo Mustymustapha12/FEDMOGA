@@ -1,3 +1,94 @@
-import {database,paystackKey,hashToken,encryptToken,decryptToken} from './lib';
-type Payment={id:string,reference:string,mode:'test'|'live',amount_kobo:number,email:string,status:string,token_cipher:string|null};
-export async function verifyPayment(reference:string){if(!/^FEDMOGA-[A-Za-z0-9-]{12,80}$/.test(reference))throw Error('Invalid reference');const db=database(),p=await db.prepare('SELECT id,reference,mode,amount_kobo,email,status,token_cipher FROM payments WHERE reference=?').bind(reference).first<Payment>();if(!p||!['test','live'].includes(p.mode))throw Error('Unknown payment');const key=await paystackKey(p.mode);const response=await fetch('https://api.paystack.co/transaction/verify/'+encodeURIComponent(reference),{headers:{Authorization:'Bearer '+key},cache:'no-store'});if(!response.ok)throw Error('Paystack verification unavailable');const result=await response.json() as any,d=result?.data;if(result?.status!==true||d?.status!=='success'||d?.reference!==reference||d?.amount!==p.amount_kobo||d?.currency!=='NGN'||String(d?.customer?.email||'').toLowerCase()!==p.email.toLowerCase()||d?.domain!==p.mode)throw Error('Paystack transaction did not match expected payment');if(p.status==='SUCCESS'&&p.token_cipher)return decryptToken(p.token_cipher);const raw=Array.from(crypto.getRandomValues(new Uint8Array(32)),b=>b.toString(16).padStart(2,'0')).join('');const hashed=await hashToken(raw),cipher=await encryptToken(raw);const update=await db.prepare("UPDATE payments SET status='SUCCESS',paid_at=?,token_hash=?,token_cipher=?,token_expires_at=? WHERE id=? AND status='PENDING'").bind(new Date().toISOString(),hashed,cipher,new Date(Date.now()+30*86400_000).toISOString(),p.id).run();if(!update.meta.changes){const latest=await db.prepare('SELECT token_cipher FROM payments WHERE id=?').bind(p.id).first<{token_cipher:string|null}>();if(latest?.token_cipher)return decryptToken(latest.token_cipher);throw Error('Payment state could not be updated')}return raw}
+import {
+  database,
+  paystackKey,
+  hashToken,
+  encryptToken,
+  decryptToken,
+} from "./lib";
+import { HttpError } from "../server/security";
+type Payment = {
+  id: string;
+  reference: string;
+  mode: "test" | "live";
+  amount_kobo: number;
+  email: string;
+  status: string;
+  token_cipher: string | null;
+  completed: number;
+  token_expires_at: string | null;
+};
+export async function verifyPayment(reference: string): Promise<string | null> {
+  if (!/^FEDMOGA-[A-Za-z0-9-]{12,80}$/.test(reference))
+    throw new HttpError("Invalid reference");
+  const db = database(),
+    p = await db
+      .prepare(
+        "SELECT id,reference,mode,amount_kobo,email,status,token_cipher,completed,token_expires_at FROM payments WHERE reference=?",
+      )
+      .bind(reference)
+      .first<Payment>();
+  if (!p || !["test", "live"].includes(p.mode))
+    throw new HttpError("Unknown payment", 404);
+  const response = await fetch(
+    "https://api.paystack.co/transaction/verify/" +
+      encodeURIComponent(reference),
+    {
+      headers: { Authorization: "Bearer " + (await paystackKey(p.mode)) },
+      cache: "no-store",
+      signal: AbortSignal.timeout(15000),
+    },
+  );
+  if (!response.ok)
+    throw new HttpError("Paystack verification unavailable", 502);
+  const result = await response.json(),
+    d = result?.data;
+  if (
+    result?.status !== true ||
+    d?.status !== "success" ||
+    d?.reference !== reference ||
+    d?.amount !== p.amount_kobo ||
+    d?.currency !== "NGN" ||
+    String(d?.customer?.email || "").toLowerCase() !== p.email.toLowerCase() ||
+    d?.domain !== p.mode
+  )
+    throw new HttpError(
+      "Paystack transaction did not match the expected payment",
+      403,
+    );
+  if (p.completed) return null;
+  if (
+    p.status === "SUCCESS" &&
+    p.token_cipher &&
+    p.token_expires_at &&
+    new Date(p.token_expires_at) > new Date()
+  )
+    return decryptToken(p.token_cipher);
+  const raw = Array.from(crypto.getRandomValues(new Uint8Array(32)), (b) =>
+    b.toString(16).padStart(2, "0"),
+  ).join("");
+  const update = await db
+    .prepare(
+      "UPDATE payments SET status='SUCCESS',paid_at=?,token_hash=?,token_cipher=?,token_expires_at=?,email_sent_at=NULL WHERE id=? AND (status='PENDING' OR (status='SUCCESS' AND token_expires_at<=?)) AND completed=0",
+    )
+    .bind(
+      new Date().toISOString(),
+      await hashToken(raw),
+      await encryptToken(raw),
+      new Date(Date.now() + 30 * 86400_000).toISOString(),
+      p.id,
+      new Date().toISOString(),
+    )
+    .run();
+  if (!update.meta.changes) {
+    const latest = await db
+      .prepare(
+        "SELECT token_cipher,completed,token_expires_at FROM payments WHERE id=?",
+      )
+      .bind(p.id)
+      .first<{ token_cipher: string | null; completed: number }>();
+    if (latest?.completed) return null;
+    if (latest?.token_cipher) return decryptToken(latest.token_cipher);
+    throw new HttpError("Payment state could not be updated", 409);
+  }
+  return raw;
+}

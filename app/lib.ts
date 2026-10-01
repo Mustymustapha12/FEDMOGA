@@ -1,14 +1,72 @@
-import { env } from 'cloudflare:workers';
-import { getChatGPTUser } from './chatgpt-auth';
-const bootstrapEmail='abduljalilmustapha007@gmail.com';
-export function database(){if(!env.DB)throw Error('Database unavailable');return env.DB}
-export async function setting(key:string,fallback=''){const row=await database().prepare('SELECT value FROM settings WHERE key=?').bind(key).first<{value:string}>();return row?.value??fallback}
-export async function currentAdmin(){const user=await getChatGPTUser();if(!user)return null;const db=database();let row=await db.prepare('SELECT id,email,role,active FROM admins WHERE lower(email)=lower(?)').bind(user.email).first<{id:string,email:string,role:string,active:number}>();if(!row&&user.email.toLowerCase()===bootstrapEmail){const count=await db.prepare('SELECT count(*) as n FROM admins').first<{n:number}>();if(count?.n===0){await db.prepare('INSERT OR IGNORE INTO admins(id,email,role,active,created_at) VALUES(?,?,?,1,?)').bind(crypto.randomUUID(),user.email.toLowerCase(),'SUPER_ADMIN',new Date().toISOString()).run();row=await db.prepare('SELECT id,email,role,active FROM admins WHERE lower(email)=lower(?)').bind(user.email).first<{id:string,email:string,role:string,active:number}>()}}return row?.active?row:null}
-export async function requireAdmin(superOnly=false){const admin=await currentAdmin();if(!admin||(superOnly&&admin.role!=='SUPER_ADMIN'))throw Error('Unauthorized');return admin}
-export function errorResponse(e:unknown){return Response.json({error:e instanceof Error?e.message:'Request failed'},{status:e instanceof Error&&e.message==='Unauthorized'?403:400})}
-export async function encryptSecret(value:string){const raw=(env as unknown as Record<string,string>).FEDMOGA_ENCRYPTION_KEY;if(!raw||!/^[0-9a-f]{64}$/i.test(raw))throw Error('Encryption is not configured');const key=await crypto.subtle.importKey('raw',Uint8Array.from(raw.match(/.{2}/g)!.map(v=>parseInt(v,16))),'AES-GCM',false,['encrypt']);const iv=crypto.getRandomValues(new Uint8Array(12)),cipher=await crypto.subtle.encrypt({name:'AES-GCM',iv},key,new TextEncoder().encode(value));return btoa(String.fromCharCode(...iv,...new Uint8Array(cipher)))}
-export async function decryptSecret(value:string){const raw=(env as unknown as Record<string,string>).FEDMOGA_ENCRYPTION_KEY;if(!raw||!/^[0-9a-f]{64}$/i.test(raw))throw Error('Encryption is not configured');const key=await crypto.subtle.importKey('raw',Uint8Array.from(raw.match(/.{2}/g)!.map(v=>parseInt(v,16))),'AES-GCM',false,['decrypt']);const bytes=Uint8Array.from(atob(value),c=>c.charCodeAt(0));return new TextDecoder().decode(await crypto.subtle.decrypt({name:'AES-GCM',iv:bytes.slice(0,12)},key,bytes.slice(12)))}
-export async function paystackKey(mode:'test'|'live'){const encrypted=await setting('paystack_'+mode+'_secret','');if(!encrypted)throw Error(`${mode} Paystack secret key is not configured`);return decryptSecret(encrypted)}
-export async function hashToken(token:string){const digest=await crypto.subtle.digest('SHA-256',new TextEncoder().encode(token));return Array.from(new Uint8Array(digest),b=>b.toString(16).padStart(2,'0')).join('')}
-export async function encryptToken(token:string){return encryptSecret(token)}
-export async function decryptToken(token:string){return decryptSecret(token)}
+import { createCipheriv, createDecipheriv, randomBytes } from "node:crypto";
+import { database } from "../server/database";
+import { HttpError, digest } from "../server/security";
+export { database };
+export { currentAdmin, requireAdmin } from "../server/auth";
+export async function setting(key: string, fallback = "") {
+  const row = await database()
+    .prepare("SELECT value FROM settings WHERE `key`=?")
+    .bind(key)
+    .first<{ value: string }>();
+  return row?.value ?? fallback;
+}
+export async function putSetting(key: string, value: string, db = database()) {
+  await db
+    .prepare(
+      "INSERT INTO settings(`key`,value) VALUES(?,?) ON DUPLICATE KEY UPDATE value=VALUES(value)",
+    )
+    .bind(key, value)
+    .run();
+}
+export function errorResponse(e: unknown) {
+  if (e instanceof HttpError)
+    return Response.json({ error: e.message }, { status: e.status });
+  console.error(
+    "FEDMOGA request failed:",
+    e instanceof Error ? e.name : "Unknown error",
+  );
+  return Response.json(
+    {
+      error:
+        "The request could not be completed. Check the server configuration or try again.",
+    },
+    { status: 500 },
+  );
+}
+function encryptionKey() {
+  const raw = process.env.FEDMOGA_ENCRYPTION_KEY;
+  if (!raw || !/^[0-9a-f]{64}$/i.test(raw))
+    throw new HttpError("Encryption is not configured", 503);
+  return Buffer.from(raw, "hex");
+}
+export async function encryptSecret(value: string) {
+  const iv = randomBytes(12),
+    cipher = createCipheriv("aes-256-gcm", encryptionKey(), iv);
+  const encrypted = Buffer.concat([
+    cipher.update(value, "utf8"),
+    cipher.final(),
+  ]);
+  return Buffer.concat([iv, cipher.getAuthTag(), encrypted]).toString("base64");
+}
+export async function decryptSecret(value: string) {
+  const bytes = Buffer.from(value, "base64");
+  const decipher = createDecipheriv(
+    "aes-256-gcm",
+    encryptionKey(),
+    bytes.subarray(0, 12),
+  );
+  decipher.setAuthTag(bytes.subarray(12, 28));
+  return Buffer.concat([
+    decipher.update(bytes.subarray(28)),
+    decipher.final(),
+  ]).toString("utf8");
+}
+export async function paystackKey(mode: "test" | "live") {
+  const encrypted = await setting("paystack_" + mode + "_secret", "");
+  if (!encrypted)
+    throw new HttpError(`${mode} Paystack secret key is not configured`, 503);
+  return decryptSecret(encrypted);
+}
+export const hashToken = async (token: string) => digest(token);
+export const encryptToken = encryptSecret;
+export const decryptToken = decryptSecret;

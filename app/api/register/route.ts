@@ -1,2 +1,76 @@
-import {database,errorResponse,setting,hashToken} from '../../lib';
-export async function POST(req:Request){try{const {paymentId,answers,token}=await req.json() as Record<string,any>;if(typeof paymentId!=='string'||!answers||typeof answers!=='object'||answers.consent!==true)throw Error('Invalid registration or missing consent');const db=database(),p=await db.prepare('SELECT id,completed,reference,token_hash,token_expires_at,status FROM payments WHERE id=?').bind(paymentId).first<{id:string,completed:number,reference:string|null,token_hash:string|null,token_expires_at:string|null,status:string}>();if(!p||p.completed)throw Error('Payment unavailable or already used');if(p.reference){if(p.status!=='SUCCESS'||typeof token!=='string'||!p.token_hash||await hashToken(token)!==p.token_hash||!p.token_expires_at||new Date(p.token_expires_at)<=new Date())throw Error('Verified payment link required')}else if(p.status!=='TEST_PAID')throw Error('Payment not complete');const raw=await setting('form',''),form=raw?JSON.parse(raw):null;if(form){for(const s of form.sections||[])for(const f of s.fields||[]){if(f.required&&!answers[f.id])throw Error(`${f.label} is required`)}}const number='FEDMOGA-TEST-'+crypto.randomUUID().slice(0,8).toUpperCase(),id=crypto.randomUUID();await db.batch([db.prepare('INSERT INTO registrations(id,payment_id,number,answers,created_at) VALUES(?,?,?,?,?)').bind(id,paymentId,number,JSON.stringify(answers),new Date().toISOString()),db.prepare('UPDATE payments SET completed=1,token_hash=NULL,token_cipher=NULL,token_expires_at=NULL WHERE id=? AND completed=0').bind(paymentId)]);return Response.json({id,number})}catch(e){return errorResponse(e)}}
+import { errorResponse, setting, hashToken } from "../../lib";
+import { readJson, HttpError } from "../../../server/security";
+import { transaction } from "../../../server/database";
+import { defaultSections, validateAnswers } from "../../../server/form";
+export async function POST(req: Request) {
+  try {
+    const { paymentId, answers, token } = await readJson(req);
+    if (
+      typeof paymentId !== "string" ||
+      typeof token !== "string" ||
+      !/^[a-f0-9]{64}$/.test(token)
+    )
+      throw new HttpError("A verified payment link is required", 403);
+    const raw = await setting("form"),
+      sections = raw ? JSON.parse(raw).sections : defaultSections;
+    const result = await transaction(async (db) => {
+      const p = await db
+        .prepare(
+          "SELECT id,email,completed,token_hash,token_expires_at,status,mode FROM payments WHERE id=? FOR UPDATE",
+        )
+        .bind(paymentId)
+        .first<{
+          id: string;
+          email: string;
+          completed: number;
+          token_hash: string | null;
+          token_expires_at: string | null;
+          status: string;
+          mode: string;
+        }>();
+      if (
+        !p ||
+        p.completed ||
+        p.status !== "SUCCESS" ||
+        !p.token_hash ||
+        (await hashToken(token)) !== p.token_hash ||
+        !p.token_expires_at ||
+        new Date(p.token_expires_at) <= new Date()
+      )
+        throw new HttpError(
+          "This payment link is invalid, expired or already used",
+          403,
+        );
+      const clean = validateAnswers(sections, answers, p.email),
+        id = crypto.randomUUID(),
+        number =
+          "FEDMOGA-" +
+          (p.mode === "test" ? "TEST-" : "") +
+          new Date().getUTCFullYear() +
+          "-" +
+          crypto.randomUUID().replaceAll("-", "").slice(0, 12).toUpperCase();
+      await db
+        .prepare(
+          "INSERT INTO registrations(id,payment_id,number,answers,created_at) VALUES(?,?,?,?,?)",
+        )
+        .bind(
+          id,
+          paymentId,
+          number,
+          JSON.stringify(clean),
+          new Date().toISOString(),
+        )
+        .run();
+      await db
+        .prepare(
+          "UPDATE payments SET completed=1,token_hash=NULL,token_cipher=NULL,token_expires_at=NULL WHERE id=?",
+        )
+        .bind(paymentId)
+        .run();
+      return { id, number };
+    });
+    return Response.json(result);
+  } catch (e) {
+    return errorResponse(e);
+  }
+}
