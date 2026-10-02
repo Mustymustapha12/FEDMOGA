@@ -500,9 +500,9 @@ export default function Portal() {
               </span>
               <h1>Stay connected to the women who shared your journey.</h1>
               <p>
-                Register as an FGGC Minjibir alumna to strengthen our membership
-                database, stay in touch, and support the activities and
-                development of the association.
+                Join the FGGC Minjibir Alumni community to strengthen our
+                membership database, stay in touch, and support the activities
+                and development of the association.
               </p>
               <p>
                 Please complete your details accurately. Payment is verified
