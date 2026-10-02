@@ -1,3 +1,5 @@
+import { POST as recover } from "../app/api/paystack/recover/route";
+import { GET as callback } from "../app/api/paystack/callback/route";
 import nodemailer from "nodemailer";
 import { test, after } from "node:test";
 import assert from "node:assert/strict";
@@ -46,7 +48,9 @@ test(
     for (const name of ["SMTP_HOST", "SMTP_USER", "SMTP_PASSWORD", "SMTP_FROM"])
       process.env[name] = "fake@example.com";
     nodemailer.createTransport = (() => ({
-      sendMail: async () => ({ accepted: [email], rejected: [] }),
+      sendMail: async () => {
+        throw new Error("Automatic verification must not send email");
+      },
       close: () => {},
     })) as unknown as typeof nodemailer.createTransport;
     const original = globalThis.fetch;
@@ -142,6 +146,45 @@ test(
       assert.ok(row);
       const firstToken = await decryptToken(row.token_cipher);
       assert.equal(await verifyPayment(reference), firstToken);
+      const recovered = await recover(
+        request("/api/paystack/recover", { email, reference }),
+      );
+      assert.equal(recovered.status, 200);
+      assert.equal((await recovered.json()).token, firstToken);
+      assert.equal(
+        (
+          await recover(
+            request("/api/paystack/recover", {
+              email: "wrong@example.com",
+              reference,
+            }),
+          )
+        ).status,
+        404,
+      );
+      const redirected = await callback(
+        new Request(
+          "https://fedmoga.example/api/paystack/callback?reference=" +
+            reference,
+        ),
+      );
+      assert.equal(redirected.status, 303);
+      assert.equal(
+        new URL(redirected.headers.get("location")!).searchParams.get(
+          "continue",
+        ),
+        firstToken,
+      );
+      assert.equal(
+        (
+          await db
+            .prepare("SELECT email_sent_at FROM payments WHERE id=?")
+            .bind(payment.id)
+            .first<{ email_sent_at: string | null }>()
+        )?.email_sent_at,
+        null,
+      );
+
       assert.equal((await webhook(hook(signature))).status, 200);
       await db
         .prepare("UPDATE payments SET token_expires_at=? WHERE id=?")
@@ -207,6 +250,11 @@ test(
         403,
       );
       assert.equal(await verifyPayment(reference), null);
+      assert.equal(
+        (await recover(request("/api/paystack/recover", { email, reference })))
+          .status,
+        404,
+      );
       assert.equal((await webhook(hook(signature))).status, 200);
     } finally {
       globalThis.fetch = original;

@@ -93,24 +93,61 @@ export default function Portal() {
     const token = params.get("continue");
     if (params.get("payment") === "unverified")
       setNotice(
-        "Payment verification is pending. Use your payment reference to recover your registration link.",
+        "Payment verification is pending. Enter your payment email and reference below to verify and continue.",
       );
     if (params.get("payment") === "complete")
       setNotice(
         "This payment has already been used to complete a registration.",
       );
     if (token) {
-      api("/api/paystack/continue", { token })
-        .then((p) => {
-          setContinuationToken(token);
-          setPaymentId(p.id);
-          setPayer({ name: p.name, email: p.email, phone: p.phone });
-          setView("register");
-          history.replaceState(null, "", location.pathname);
-        })
-        .catch(() => setNotice("That payment link has expired or was used"));
+      openRegistration(token).catch(() =>
+        setNotice("That payment link has expired or was used"),
+      );
+    } else if (
+      params.get("payment") === "unverified" ||
+      params.get("reference") ||
+      params.get("trxref")
+    ) {
+      let stored: { email?: string; reference?: string } = {};
+      try {
+        stored = JSON.parse(sessionStorage.getItem("fedmogaCheckout") || "{}");
+      } catch {}
+      const reference =
+        params.get("reference") || params.get("trxref") || stored.reference;
+      if (stored.email && reference === stored.reference) {
+        setBusy(true);
+        setNotice("Verifying payment…");
+        (async () => {
+          for (let attempt = 0; attempt < 3; attempt++) {
+            try {
+              const result = await api("/api/paystack/recover", {
+                email: stored.email,
+                reference,
+              });
+              await openRegistration(result.token);
+              return;
+            } catch {
+              if (attempt < 2)
+                await new Promise((resolve) => setTimeout(resolve, 2000));
+            }
+          }
+          setNotice(
+            "Automatic verification could not finish. Enter your payment email and reference below to try again. Do not pay again.",
+          );
+        })().finally(() => setBusy(false));
+      }
     }
   }, []);
+  async function openRegistration(token: string) {
+    const p = await api("/api/paystack/continue", { token });
+    setContinuationToken(token);
+    setPaymentId(p.id);
+    setPayer({ name: p.name, email: p.email, phone: p.phone });
+    setNotice("");
+    setView("register");
+    sessionStorage.removeItem("fedmogaCheckout");
+    history.replaceState(null, "", location.pathname);
+  }
   async function openAdmin() {
     setView("admin");
     setNotice("");
@@ -132,6 +169,10 @@ export default function Portal() {
       if (!checkoutReady)
         throw Error("Checkout is not configured. Please contact FEDMOGA.");
       const result = await api("/api/paystack/initialize", payer);
+      sessionStorage.setItem(
+        "fedmogaCheckout",
+        JSON.stringify({ email: payer.email, reference: result.reference }),
+      );
       window.location.assign(result.authorizationUrl);
     } catch (e) {
       setNotice(String(e));
@@ -279,14 +320,18 @@ export default function Portal() {
   async function recover(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
     const f = new FormData(e.currentTarget);
+    setBusy(true);
+    setNotice("Verifying payment…");
     try {
       const result = await api("/api/paystack/recover", {
         email: f.get("email"),
         reference: f.get("reference"),
       });
-      setNotice(result.message);
+      await openRegistration(result.token);
     } catch (e) {
       setNotice(String(e));
+    } finally {
+      setBusy(false);
     }
   }
   async function changeAdmin(a: Admin, role: string, active: boolean) {
@@ -458,13 +503,17 @@ export default function Portal() {
                     : "Payment is processed securely by Paystack."}
               </p>
               <details>
-                <summary>Already paid? Recover your registration link</summary>
+                <summary>
+                  Already paid? Verify and continue registration
+                </summary>
                 <form onSubmit={recover}>
                   <label>Payment email</label>
                   <input name="email" type="email" required />
                   <label>Paystack reference</label>
                   <input name="reference" required placeholder="FEDMOGA-…" />
-                  <button className="secondary">Email registration link</button>
+                  <button className="secondary" disabled={busy}>
+                    {busy ? "Verifying…" : "Verify payment and register"}
+                  </button>
                 </form>
               </details>
             </div>
@@ -811,6 +860,8 @@ export default function Portal() {
                             <tr>
                               <th>Reference</th>
                               <th>Name</th>
+                              <th>Email</th>
+                              <th>Phone</th>
                               <th>Amount</th>
                               <th>Status</th>
                             </tr>
@@ -820,6 +871,8 @@ export default function Portal() {
                               <tr key={p.id}>
                                 <td>{p.reference}</td>
                                 <td>{p.name}</td>
+                                <td>{p.email}</td>
+                                <td>{p.phone}</td>
                                 <td>{money(p.amount)}</td>
                                 <td>
                                   <span className="pill">

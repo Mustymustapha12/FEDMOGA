@@ -5,7 +5,6 @@ import {
   validEmail,
   HttpError,
 } from "../../../../server/security";
-import { sendContinuation } from "../../../../server/email";
 import { verifyPayment } from "../../../paystack";
 export async function POST(req: Request) {
   try {
@@ -17,26 +16,28 @@ export async function POST(req: Request) {
     )
       throw new HttpError("Enter your payment email and reference");
     const normalized = (email as string).trim().toLowerCase();
-    await rateLimit("recover:" + normalized, 3, 3600_000);
+    await rateLimit("recover:" + normalized, 10, 3600_000);
     const p = await database()
       .prepare(
         "SELECT id FROM payments WHERE email=? AND reference=? AND completed=0",
       )
       .bind(normalized, reference)
       .first();
-    if (p) {
-      try {
-        const token = await verifyPayment(reference);
-        if (token) await sendContinuation(reference, token, true);
-      } catch {
-        console.error("Payment recovery was not completed");
-      }
-    }
-    return Response.json({
-      ok: true,
-      message:
-        "If an eligible payment matches and email delivery is configured, a registration link will be emailed.",
-    });
+    if (!p)
+      throw new HttpError(
+        "No unfinished payment matches that email and reference. Check your details or contact FEDMOGA.",
+        404,
+      );
+    const token = await verifyPayment(reference);
+    if (!token)
+      throw new HttpError(
+        "This payment has already been used to register",
+        409,
+      );
+    return Response.json(
+      { ok: true, token },
+      { headers: { "Cache-Control": "no-store" } },
+    );
   } catch (e) {
     return errorResponse(e);
   }

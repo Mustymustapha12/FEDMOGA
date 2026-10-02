@@ -1,7 +1,6 @@
 import { createHmac, timingSafeEqual } from "node:crypto";
 import { database, paystackKey } from "../../../lib";
 import { verifyPayment } from "../../../paystack";
-import { sendContinuation } from "../../../../server/email";
 export async function POST(req: Request) {
   if (Number(req.headers.get("content-length") || 0) > 100000)
     return new Response("Too large", { status: 413 });
@@ -30,8 +29,7 @@ export async function POST(req: Request) {
     if (!timingSafeEqual(expected, Buffer.from(signature, "hex")))
       return new Response("Invalid signature", { status: 401 });
     if (event.event === "charge.success") {
-      const token = await verifyPayment(ref);
-      if (token) await sendContinuation(ref, token);
+      await verifyPayment(ref);
     }
     return new Response("OK");
   } catch {
