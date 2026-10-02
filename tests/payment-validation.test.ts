@@ -74,3 +74,23 @@ test("verification identifies mismatched fields and distinguishes pending paymen
     /still processing/,
   );
 });
+
+test("customer-borne charges are accepted but underpayments are rejected in test and live mode", () => {
+  for (const mode of ["test", "live"]) {
+    for (const amount of [500000, 517767, "517767", 700000]) {
+      validateVerifiedPayment(
+        { ...verified, data: { ...verified.data, domain: mode, amount } },
+        { ...expected, mode, amount_kobo: "500000" },
+      );
+    }
+    for (const amount of [499999, "499999", 0, -1])
+      assert.throws(
+        () =>
+          validateVerifiedPayment(
+            { ...verified, data: { ...verified.data, domain: mode, amount } },
+            { ...expected, mode },
+          ),
+        /amount/,
+      );
+  }
+});

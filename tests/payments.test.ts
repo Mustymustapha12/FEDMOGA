@@ -124,7 +124,7 @@ test(
           "PENDING",
         );
       }
-      mismatch = {};
+      mismatch = { amount: 517767 };
       const event = JSON.stringify({
           event: "charge.success",
           data: { reference },

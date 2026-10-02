@@ -9,7 +9,9 @@ function kobo(value: unknown): bigint | null {
     value.length <= 20
   ) {
     const amount = BigInt(value);
-    return amount > BigInt(0) ? amount : null;
+    return amount > BigInt(0) && amount <= BigInt(Number.MAX_SAFE_INTEGER)
+      ? amount
+      : null;
   }
   return null;
 }
@@ -41,12 +43,14 @@ export function validateVerifiedPayment(
   }
   const mismatches: string[] = [];
   if (data.reference !== expected.reference) mismatches.push("reference");
+  // Paystack can add customer-borne processing charges to the checkout total.
+  // Require the full snapshotted registration fee; allow the verified surcharge.
   const actualAmount = kobo(data.amount),
     expectedAmount = kobo(expected.amount_kobo);
   if (
     actualAmount === null ||
     expectedAmount === null ||
-    actualAmount !== expectedAmount
+    actualAmount < expectedAmount
   )
     mismatches.push("amount");
   if (data.currency !== "NGN") mismatches.push("currency");
