@@ -1,3 +1,4 @@
+import { emailConfiguration } from "../../../../server/email";
 import { database, requireAdmin, errorResponse, setting } from "../../../lib";
 export const dynamic = "force-dynamic";
 export async function GET() {
@@ -42,6 +43,8 @@ export async function GET() {
     return Response.json(
       {
         admin,
+        emailDelivery:
+          admin.role === "SUPER_ADMIN" ? emailConfiguration() : undefined,
         payments: payments.results,
         registrations: registrations.results,
         admins: admins.results,

@@ -1,3 +1,4 @@
+import nodemailer from "nodemailer";
 import { test, after } from "node:test";
 import assert from "node:assert/strict";
 import { createHmac } from "node:crypto";
@@ -41,6 +42,13 @@ test(
         },
         body: JSON.stringify(body),
       });
+    const mailOriginal = nodemailer.createTransport;
+    for (const name of ["SMTP_HOST", "SMTP_USER", "SMTP_PASSWORD", "SMTP_FROM"])
+      process.env[name] = "fake@example.com";
+    nodemailer.createTransport = (() => ({
+      sendMail: async () => ({ accepted: [email], rejected: [] }),
+      close: () => {},
+    })) as unknown as typeof nodemailer.createTransport;
     const original = globalThis.fetch;
     let reference = "";
     let mismatch: Record<string, unknown> = {};
@@ -202,6 +210,7 @@ test(
       assert.equal((await webhook(hook(signature))).status, 200);
     } finally {
       globalThis.fetch = original;
+      nodemailer.createTransport = mailOriginal;
     }
   },
 );

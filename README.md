@@ -78,3 +78,11 @@ A successful build does not connect to MySQL or create the first administrator. 
 - `SUPER_ADMIN_CONFIG_MISSING`: set both initial Super Admin variables while the admins table is empty. Only remove the initial password after successful login.
 
 Once `/api/health` reports a connected database and `adminSetup: pending_first_login` without missing variables, sign in with the initial Super Admin credentials. Then configure Paystack test keys in Settings before attempting checkout. For any unresolved error, share the diagnostic JSON or safe error-code lines from Runtime logs, not your environment variable values.
+
+### Email delivery and test cleanup
+
+SMTP is required to email registration links in both test and live mode. In Hostinger set SMTP_HOST=smtp.hostinger.com, SMTP_PORT=465, SMTP_USER to your full Hostinger mailbox address, SMTP_PASSWORD to that mailbox password, and SMTP_FROM to the same mailbox address. For another provider use its SMTP settings. Redeploy after changing environment variables. Never commit mailbox credentials.
+
+Super Admin → Settings → Email delivery lists missing variable names and sends a test email to the signed-in Super Admin. Mail-server acceptance does not guarantee inbox delivery; check spam and the provider's mail logs. The public payment-recovery response deliberately remains generic to avoid exposing payment records. It only emails links for verified, unfinished registrations. Use Admin → Incomplete → Email registration link to retry after configuring email.
+
+Super Admin → Settings → Clear test data permanently deletes all test-mode payments and their registrations. Type DELETE TEST DATA and accept the confirmation. The registration table also offers Delete test entry for individual test registrations and their associated payments. These actions invalidate test registration links, retain live records, settings, admin accounts and audit logs, and record deletion counts in the audit log. Deleted data cannot be restored without a backup. These actions remove local test records, not transactions in your Paystack dashboard.

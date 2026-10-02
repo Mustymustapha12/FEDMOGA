@@ -45,6 +45,7 @@ type State = {
   liveSecretSaved: boolean;
   paystackMode: string;
   liveAllowed: boolean;
+  emailDelivery?: { configured: boolean; missing: string[] };
 };
 import { defaultSections as defaults } from "./form-config";
 const money = (v: number) => "₦" + Number(v).toLocaleString("en-NG");
@@ -670,6 +671,37 @@ export default function Portal() {
                                   >
                                     View entry
                                   </button>
+                                  {state.admin.role === "SUPER_ADMIN" &&
+                                    r.mode === "test" && (
+                                      <button
+                                        className="secondary"
+                                        onClick={async () => {
+                                          if (
+                                            !window.confirm(
+                                              "Permanently delete this test registration and its payment?",
+                                            )
+                                          )
+                                            return;
+                                          try {
+                                            const result = await api(
+                                              "/api/admin/test-data/clear",
+                                              {
+                                                confirmation:
+                                                  "DELETE TEST DATA",
+                                                registrationId: r.id,
+                                              },
+                                            );
+                                            setSelected(null);
+                                            await refresh();
+                                            alert(result.message);
+                                          } catch (e) {
+                                            alert((e as Error).message);
+                                          }
+                                        }}
+                                      >
+                                        Delete test entry
+                                      </button>
+                                    )}
                                 </td>
                               </tr>
                             ))}
@@ -809,6 +841,81 @@ export default function Portal() {
                           "repeat(auto-fit,minmax(300px,1fr))",
                       }}
                     >
+                      <div className="card">
+                        <h2>Email delivery</h2>
+                        <p>
+                          {state.emailDelivery?.configured
+                            ? "SMTP settings are present. Send a test email to verify them."
+                            : "Missing environment variables: " +
+                              state.emailDelivery?.missing.join(", ")}
+                        </p>
+                        <p>
+                          Configure SMTP_HOST, SMTP_PORT, SMTP_USER,
+                          SMTP_PASSWORD and SMTP_FROM in Hostinger, then
+                          redeploy. Use your email mailbox password.
+                        </p>
+                        <button
+                          onClick={async (e) => {
+                            const button = e.currentTarget;
+                            button.disabled = true;
+                            try {
+                              const result = await api(
+                                "/api/admin/email/test",
+                                {},
+                              );
+                              alert(result.message);
+                            } catch (error) {
+                              alert((error as Error).message);
+                            } finally {
+                              button.disabled = false;
+                            }
+                          }}
+                        >
+                          Send test email to my account
+                        </button>
+                      </div>
+                      <form
+                        className="card"
+                        onSubmit={async (e) => {
+                          e.preventDefault();
+                          const values = new FormData(e.currentTarget);
+                          if (
+                            !window.confirm(
+                              "Permanently delete ALL test payments and registrations? This cannot be undone.",
+                            )
+                          )
+                            return;
+                          try {
+                            const result = await api(
+                              "/api/admin/test-data/clear",
+                              { confirmation: values.get("confirmation") },
+                            );
+                            setSelected(null);
+                            await refresh();
+                            alert(result.message);
+                          } catch (error) {
+                            alert((error as Error).message);
+                          }
+                        }}
+                      >
+                        <h2>Clear test data</h2>
+                        <p>
+                          Permanently remove test-mode registrations and
+                          payments, including unused registration links. Live
+                          records, admin accounts, settings and audit history
+                          are retained.
+                        </p>
+                        <label>
+                          Type DELETE TEST DATA to confirm
+                          <input
+                            name="confirmation"
+                            required
+                            pattern="DELETE TEST DATA"
+                            autoComplete="off"
+                          />
+                        </label>
+                        <button>Delete all test data</button>
+                      </form>
                       <form
                         className="card"
                         onSubmit={(e) => {
