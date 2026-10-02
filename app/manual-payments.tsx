@@ -25,14 +25,16 @@ async function post(path: string, body: unknown) {
 }
 export default function ManualPayments({
   superAdmin,
+  defaultMode,
   onNotice,
   onRefresh,
 }: {
   superAdmin: boolean;
+  defaultMode: string;
   onNotice: (message: string) => void;
   onRefresh: () => Promise<void>;
 }) {
-  const [mode, setMode] = useState("live"),
+  const [mode, setMode] = useState(defaultMode === "test" ? "test" : "live"),
     [busy, setBusy] = useState(false),
     [csv, setCsv] = useState(""),
     [preview, setPreview] = useState<Entry[]>([]),

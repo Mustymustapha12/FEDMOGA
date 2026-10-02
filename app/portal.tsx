@@ -947,6 +947,7 @@ export default function Portal() {
                   {tab === "manual" && (
                     <ManualPayments
                       superAdmin={state.admin.role === "SUPER_ADMIN"}
+                      defaultMode={state.paystackMode}
                       onNotice={setNotice}
                       onRefresh={refresh}
                     />
@@ -985,6 +986,38 @@ export default function Portal() {
                                         Approved by {p.approvedBy} ·{" "}
                                         {p.paidAt?.slice(0, 10)}
                                       </small>
+                                      {state.admin.role === "SUPER_ADMIN" && (
+                                        <>
+                                          <br />
+                                          <button
+                                            className="secondary"
+                                            onClick={async () => {
+                                              const confirmation =
+                                                window.prompt(
+                                                  `Only delete this if it was a practice entry. This permanently deletes ${p.name}'s manual payment and any registration. Its stored mode is ${p.mode.toUpperCase()}. Type DELETE MANUAL TEST ENTRY to confirm.`,
+                                                );
+                                              if (
+                                                confirmation !==
+                                                "DELETE MANUAL TEST ENTRY"
+                                              )
+                                                return;
+                                              try {
+                                                const result = await api(
+                                                  "/api/admin/payments/delete-manual-test",
+                                                  { id: p.id, confirmation },
+                                                );
+                                                setSelected(null);
+                                                await refresh();
+                                                setNotice(result.message);
+                                              } catch (error) {
+                                                setNotice(String(error));
+                                              }
+                                            }}
+                                          >
+                                            Delete manual test entry
+                                          </button>
+                                        </>
+                                      )}
                                     </>
                                   )}
                                 </td>

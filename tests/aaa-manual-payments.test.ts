@@ -295,6 +295,113 @@ test(
       403,
     );
     assert.equal(await registrationToken(payment.reference), null);
+
+    const livePractice = await call(
+      "/api/admin/payments/manual",
+      {
+        ...single,
+        entry: { ...entry, externalReference: "BANK-LIVE-PRACTICE" },
+      },
+      root,
+    );
+    assert.equal(livePractice.status, 200);
+    const practice = (await livePractice.json()).payments[0];
+    const practiceRegistrationId = crypto.randomUUID();
+    await db
+      .prepare(
+        "INSERT INTO registrations(id,payment_id,number,answers,created_at) VALUES(?,?,?,?,?)",
+      )
+      .bind(
+        practiceRegistrationId,
+        practice.id,
+        "PRACTICE-" + crypto.randomUUID(),
+        "{}",
+        new Date().toISOString(),
+      )
+      .run();
+    await db
+      .prepare(
+        "UPDATE payments SET completed=1,token_hash=NULL,token_cipher=NULL WHERE id=?",
+      )
+      .bind(practice.id)
+      .run();
+    const deleteBody = {
+      id: practice.id,
+      confirmation: "DELETE MANUAL TEST ENTRY",
+    };
+    assert.equal(
+      (
+        await call(
+          "/api/admin/payments/delete-manual-test",
+          deleteBody,
+          regular,
+        )
+      ).status,
+      403,
+    );
+    assert.equal(
+      (
+        await call(
+          "/api/admin/payments/delete-manual-test",
+          { ...deleteBody, confirmation: "wrong" },
+          root,
+        )
+      ).status,
+      400,
+    );
+    assert.equal(
+      (await call("/api/admin/payments/delete-manual-test", deleteBody, root))
+        .status,
+      200,
+    );
+    assert.equal(
+      await db
+        .prepare("SELECT payment_id FROM manual_payments WHERE payment_id=?")
+        .bind(practice.id)
+        .first(),
+      null,
+    );
+    assert.equal(
+      await db
+        .prepare("SELECT id FROM registrations WHERE id=?")
+        .bind(practiceRegistrationId)
+        .first(),
+      null,
+    );
+    const paystackId = crypto.randomUUID();
+    await db
+      .prepare(
+        "INSERT INTO payments(id,full_name,email,phone,amount,status,created_at,reference,mode,amount_kobo) VALUES(?,?,?,?,?,?,?,?,?,?)",
+      )
+      .bind(
+        paystackId,
+        "Real payer",
+        "real@example.com",
+        "08012345678",
+        5000,
+        "SUCCESS",
+        new Date().toISOString(),
+        "FEDMOGA-" + crypto.randomUUID(),
+        "live",
+        500000,
+      )
+      .run();
+    assert.equal(
+      (
+        await call(
+          "/api/admin/payments/delete-manual-test",
+          { id: paystackId, confirmation: "DELETE MANUAL TEST ENTRY" },
+          root,
+        )
+      ).status,
+      404,
+    );
+    assert.ok(
+      await db
+        .prepare("SELECT id FROM payments WHERE id=?")
+        .bind(paystackId)
+        .first(),
+    );
     const cleared = await call(
       "/api/admin/test-data/clear",
       { confirmation: "DELETE TEST DATA" },
