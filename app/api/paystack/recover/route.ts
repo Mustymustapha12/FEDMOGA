@@ -5,7 +5,7 @@ import {
   validEmail,
   HttpError,
 } from "../../../../server/security";
-import { verifyPayment } from "../../../paystack";
+import { registrationToken } from "../../../../server/manual-payments";
 export async function POST(req: Request) {
   try {
     const { email, reference } = await readJson(req);
@@ -28,7 +28,7 @@ export async function POST(req: Request) {
         "No unfinished payment matches that email and reference. Check your details or contact FEDMOGA.",
         404,
       );
-    const token = await verifyPayment(reference);
+    const token = await registrationToken(reference);
     if (!token)
       throw new HttpError(
         "This payment has already been used to register",

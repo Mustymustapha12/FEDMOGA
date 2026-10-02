@@ -18,7 +18,7 @@ export async function GET() {
     ] = await Promise.all([
       db
         .prepare(
-          "SELECT id,reference,mode,full_name as name,email,phone,amount,status,created_at as date,completed FROM payments ORDER BY created_at DESC LIMIT 500",
+          "SELECT p.id,p.reference,p.mode,p.full_name as name,p.email,p.phone,p.amount,p.status,p.created_at as date,p.completed,CASE WHEN m.payment_id IS NULL THEN 'Paystack' ELSE 'Manual payment' END as source,m.external_reference as externalReference,m.approved_by as approvedBy,p.paid_at as paidAt FROM payments p LEFT JOIN manual_payments m ON m.payment_id=p.id ORDER BY p.created_at DESC LIMIT 500",
         )
         .all(),
       db

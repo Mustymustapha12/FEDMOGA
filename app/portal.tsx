@@ -1,8 +1,13 @@
 "use client";
 import { useEffect, useState } from "react";
+import ManualPayments from "./manual-payments";
 type Field = { id: string; label: string; type: string; required: boolean };
 type Section = { title: string; fields: Field[] };
 type Payment = {
+  source: string;
+  externalReference?: string;
+  approvedBy?: string;
+  paidAt?: string;
   reference: string;
   mode: string;
   id: string;
@@ -723,6 +728,7 @@ export default function Portal() {
                       "registrations",
                       "incomplete",
                       "payments",
+                      "manual",
                       "account",
                       ...(state.admin.role === "SUPER_ADMIN"
                         ? ["builder", "settings", "users"]
@@ -739,6 +745,7 @@ export default function Portal() {
                       >
                         {(
                           {
+                            manual: "Already paid",
                             incomplete: "Paid but incomplete",
                             builder: "Form builder",
                             settings: "Settings",
@@ -910,6 +917,25 @@ export default function Portal() {
                                     >
                                       Email registration link
                                     </button>
+                                    <button
+                                      className="secondary"
+                                      onClick={async () => {
+                                        try {
+                                          const result = await api(
+                                            "/api/admin/payments/link",
+                                            { id: p.id },
+                                          );
+                                          await navigator.clipboard.writeText(
+                                            result.registrationUrl,
+                                          );
+                                          setNotice("Registration link copied");
+                                        } catch (error) {
+                                          setNotice(String(error));
+                                        }
+                                      }}
+                                    >
+                                      Copy registration link
+                                    </button>
                                   </td>
                                 </tr>
                               ))}
@@ -917,6 +943,13 @@ export default function Portal() {
                         </table>
                       </div>
                     </>
+                  )}
+                  {tab === "manual" && (
+                    <ManualPayments
+                      superAdmin={state.admin.role === "SUPER_ADMIN"}
+                      onNotice={setNotice}
+                      onRefresh={refresh}
+                    />
                   )}
                   {tab === "payments" && (
                     <>
@@ -929,6 +962,7 @@ export default function Portal() {
                               <th>Name</th>
                               <th>Email</th>
                               <th>Phone</th>
+                              <th>Source / original reference</th>
                               <th>Amount</th>
                               <th>Status</th>
                             </tr>
@@ -940,6 +974,20 @@ export default function Portal() {
                                 <td>{p.name}</td>
                                 <td>{p.email}</td>
                                 <td>{p.phone}</td>
+                                <td>
+                                  {p.source}
+                                  {p.externalReference && (
+                                    <>
+                                      <br />
+                                      {p.externalReference}
+                                      <br />
+                                      <small>
+                                        Approved by {p.approvedBy} ·{" "}
+                                        {p.paidAt?.slice(0, 10)}
+                                      </small>
+                                    </>
+                                  )}
+                                </td>
                                 <td>{money(p.amount)}</td>
                                 <td>
                                   <span className="pill">
