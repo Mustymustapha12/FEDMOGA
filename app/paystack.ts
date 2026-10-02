@@ -1,3 +1,4 @@
+import { validateVerifiedPayment } from "../server/payment-validation";
 import {
   database,
   paystackKey,
@@ -10,7 +11,7 @@ type Payment = {
   id: string;
   reference: string;
   mode: "test" | "live";
-  amount_kobo: number;
+  amount_kobo: number | string;
   email: string;
   status: string;
   token_cipher: string | null;
@@ -40,21 +41,8 @@ export async function verifyPayment(reference: string): Promise<string | null> {
   );
   if (!response.ok)
     throw new HttpError("Paystack verification unavailable", 502);
-  const result = await response.json(),
-    d = result?.data;
-  if (
-    result?.status !== true ||
-    d?.status !== "success" ||
-    d?.reference !== reference ||
-    d?.amount !== p.amount_kobo ||
-    d?.currency !== "NGN" ||
-    String(d?.customer?.email || "").toLowerCase() !== p.email.toLowerCase() ||
-    d?.domain !== p.mode
-  )
-    throw new HttpError(
-      "Paystack transaction did not match the expected payment",
-      403,
-    );
+  const result = await response.json();
+  validateVerifiedPayment(result, p);
   if (p.completed) return null;
   if (
     p.status === "SUCCESS" &&

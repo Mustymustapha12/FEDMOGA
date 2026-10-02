@@ -411,3 +411,71 @@ footer {
     grid-template-columns: 1fr;
   }
 }
+
+/* Bootstrap-style feedback, self-hosted so alerts work without a CDN. */
+.alert {
+  position: sticky;
+  top: 12px;
+  z-index: 30;
+  display: flex;
+  align-items: flex-start;
+  gap: 14px;
+  margin: 0 0 24px;
+  padding: 20px;
+  border: 1px solid;
+  border-left-width: 6px;
+  border-radius: 10px;
+  box-shadow: 0 6px 22px #0002;
+  font-size: 16px;
+}
+.alert-danger {
+  color: #58151c;
+  background: #f8d7da;
+  border-color: #dc3545;
+}
+.alert-success {
+  color: #0a3622;
+  background: #d1e7dd;
+  border-color: #198754;
+}
+.alert-warning {
+  color: #664d03;
+  background: #fff3cd;
+  border-color: #ffc107;
+}
+.alert-info {
+  color: #055160;
+  background: #cff4fc;
+  border-color: #0dcaf0;
+}
+.alert strong {
+  display: block;
+  font-size: 18px;
+}
+.alert p {
+  margin: 6px 0 0;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+.alert-icon {
+  display: grid;
+  place-items: center;
+  flex: 0 0 30px;
+  height: 30px;
+  border: 2px solid currentColor;
+  border-radius: 50%;
+  font-weight: 800;
+}
+.alert .alert-close {
+  margin-left: auto;
+  padding: 0 5px;
+  color: inherit;
+  background: transparent;
+  border: 0;
+  font-size: 28px;
+  line-height: 1;
+}
+
+.feedback-region {
+  display: contents;
+}

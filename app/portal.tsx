@@ -74,12 +74,37 @@ export default function Portal() {
     [registrationNumber, setRegistrationNumber] = useState(""),
     [state, setState] = useState<State | null>(null),
     [selected, setSelected] = useState<Registration | null>(null),
-    [notice, setNotice] = useState(""),
+    [notice, updateNotice] = useState(""),
     [busy, setBusy] = useState(false),
     [mode, setMode] = useState("test"),
     [checkoutReady, setCheckoutReady] = useState(false),
     [continuationToken, setContinuationToken] = useState(""),
     [loginState, setLoginState] = useState("");
+  const [noticeKind, setNoticeKind] = useState<
+    "danger" | "success" | "warning" | "info"
+  >("info");
+  function setNotice(message: string) {
+    updateNotice(message);
+    setNoticeKind(
+      /verifying|loading/i.test(message)
+        ? "info"
+        : /pending|still processing|please wait|not confirmed/i.test(message)
+          ? "warning"
+          : /^Error:|failed|unavailable|expired|could not|cannot|not configured|missing/i.test(
+                message,
+              )
+            ? "danger"
+            : /try again|already been used/i.test(message)
+              ? "warning"
+              : "success",
+    );
+  }
+  useEffect(() => {
+    if (notice)
+      document
+        .getElementById("feedback-alert")
+        ?.scrollIntoView({ behavior: "smooth", block: "nearest" });
+  }, [notice]);
   useEffect(() => {
     api("/api/config")
       .then((v) => {
@@ -427,6 +452,46 @@ export default function Portal() {
         </div>
       </header>
       <main className="wrap">
+        <div className="feedback-region" aria-live="polite" aria-atomic="true">
+          {notice && (
+            <div
+              id="feedback-alert"
+              className={`alert alert-${noticeKind}`}
+              role={noticeKind === "danger" ? "alert" : "status"}
+            >
+              <span className="alert-icon" aria-hidden="true">
+                {noticeKind === "danger"
+                  ? "!"
+                  : noticeKind === "success"
+                    ? "✓"
+                    : noticeKind === "warning"
+                      ? "⚠"
+                      : "i"}
+              </span>
+              <div>
+                <strong>
+                  {noticeKind === "danger"
+                    ? "Action needed"
+                    : noticeKind === "success"
+                      ? "Success"
+                      : noticeKind === "warning"
+                        ? "Please check"
+                        : "Please wait"}
+                </strong>
+                <p>{notice.replace(/^Error:\s*/, "")}</p>
+              </div>
+              <button
+                type="button"
+                className="alert-close"
+                aria-label="Dismiss message"
+                onClick={() => setNotice("")}
+              >
+                ×
+              </button>
+            </div>
+          )}
+        </div>
+
         {view === "home" && (
           <div className="hero">
             <div className="intro">
@@ -742,9 +807,11 @@ export default function Portal() {
                                             );
                                             setSelected(null);
                                             await refresh();
-                                            alert(result.message);
+                                            setNotice(result.message);
                                           } catch (e) {
-                                            alert((e as Error).message);
+                                            setNotice(
+                                              "Error: " + (e as Error).message,
+                                            );
                                           }
                                         }}
                                       >
@@ -916,9 +983,9 @@ export default function Portal() {
                                 "/api/admin/email/test",
                                 {},
                               );
-                              alert(result.message);
+                              setNotice(result.message);
                             } catch (error) {
-                              alert((error as Error).message);
+                              setNotice("Error: " + (error as Error).message);
                             } finally {
                               button.disabled = false;
                             }
@@ -945,9 +1012,9 @@ export default function Portal() {
                             );
                             setSelected(null);
                             await refresh();
-                            alert(result.message);
+                            setNotice(result.message);
                           } catch (error) {
-                            alert((error as Error).message);
+                            setNotice("Error: " + (error as Error).message);
                           }
                         }}
                       >
@@ -1337,14 +1404,6 @@ export default function Portal() {
               )
             )}
           </>
-        )}
-        {notice && (
-          <p
-            className={notice.startsWith("Error") ? "error" : "success"}
-            role="status"
-          >
-            {notice}
-          </p>
         )}
       </main>
       <footer>
