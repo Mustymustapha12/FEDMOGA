@@ -729,10 +729,10 @@ export default function Portal() {
                       "incomplete",
                       "payments",
                       "manual",
+                      "builder",
+                      "settings",
                       "account",
-                      ...(state.admin.role === "SUPER_ADMIN"
-                        ? ["builder", "settings", "users"]
-                        : []),
+                      ...(state.admin.role === "SUPER_ADMIN" ? ["users"] : []),
                     ].map((t) => (
                       <button
                         key={t}
@@ -1001,7 +1001,7 @@ export default function Portal() {
                       </div>
                     </>
                   )}
-                  {tab === "settings" && state.admin.role === "SUPER_ADMIN" && (
+                  {tab === "settings" && (
                     <div
                       className="grid"
                       style={{
@@ -1009,81 +1009,87 @@ export default function Portal() {
                           "repeat(auto-fit,minmax(300px,1fr))",
                       }}
                     >
-                      <div className="card">
-                        <h2>Email delivery</h2>
-                        <p>
-                          {state.emailDelivery?.configured
-                            ? "SMTP settings are present. Send a test email to verify them."
-                            : "Missing environment variables: " +
-                              state.emailDelivery?.missing.join(", ")}
-                        </p>
-                        <p>
-                          Configure SMTP_HOST, SMTP_PORT, SMTP_USER,
-                          SMTP_PASSWORD and SMTP_FROM in Hostinger, then
-                          redeploy. Use your email mailbox password.
-                        </p>
-                        <button
-                          onClick={async (e) => {
-                            const button = e.currentTarget;
-                            button.disabled = true;
-                            try {
-                              const result = await api(
-                                "/api/admin/email/test",
-                                {},
-                              );
-                              setNotice(result.message);
-                            } catch (error) {
-                              setNotice("Error: " + (error as Error).message);
-                            } finally {
-                              button.disabled = false;
-                            }
-                          }}
-                        >
-                          Send test email to my account
-                        </button>
-                      </div>
-                      <form
-                        className="card"
-                        onSubmit={async (e) => {
-                          e.preventDefault();
-                          const values = new FormData(e.currentTarget);
-                          if (
-                            !window.confirm(
-                              "Permanently delete ALL test payments and registrations? This cannot be undone.",
-                            )
-                          )
-                            return;
-                          try {
-                            const result = await api(
-                              "/api/admin/test-data/clear",
-                              { confirmation: values.get("confirmation") },
-                            );
-                            setSelected(null);
-                            await refresh();
-                            setNotice(result.message);
-                          } catch (error) {
-                            setNotice("Error: " + (error as Error).message);
-                          }
-                        }}
-                      >
-                        <h2>Clear test data</h2>
-                        <p>
-                          Permanently remove test-mode registrations and
-                          payments, including unused registration links. Live
-                          records, admin accounts, settings and audit history
-                          are retained.
-                        </p>
-                        <label>
-                          Type DELETE TEST DATA to confirm
-                          <input
-                            name="confirmation"
-                            required
-                            pattern="DELETE TEST DATA"
-                            autoComplete="off"
-                          />
-                        </label>
-                        <button>Delete all test data</button>
-                      </form>
+                      {state.admin.role === "SUPER_ADMIN" && (
+                        <>
+                          <div className="card">
+                            <h2>Email delivery</h2>
+                            <p>
+                              {state.emailDelivery?.configured
+                                ? "SMTP settings are present. Send a test email to verify them."
+                                : "Missing environment variables: " +
+                                  state.emailDelivery?.missing.join(", ")}
+                            </p>
+                            <p>
+                              Configure SMTP_HOST, SMTP_PORT, SMTP_USER,
+                              SMTP_PASSWORD and SMTP_FROM in Hostinger, then
+                              redeploy. Use your email mailbox password.
+                            </p>
+                            <button
+                              onClick={async (e) => {
+                                const button = e.currentTarget;
+                                button.disabled = true;
+                                try {
+                                  const result = await api(
+                                    "/api/admin/email/test",
+                                    {},
+                                  );
+                                  setNotice(result.message);
+                                } catch (error) {
+                                  setNotice(
+                                    "Error: " + (error as Error).message,
+                                  );
+                                } finally {
+                                  button.disabled = false;
+                                }
+                              }}
+                            >
+                              Send test email to my account
+                            </button>
+                          </div>
+                          <form
+                            className="card"
+                            onSubmit={async (e) => {
+                              e.preventDefault();
+                              const values = new FormData(e.currentTarget);
+                              if (
+                                !window.confirm(
+                                  "Permanently delete ALL test payments and registrations? This cannot be undone.",
+                                )
+                              )
+                                return;
+                              try {
+                                const result = await api(
+                                  "/api/admin/test-data/clear",
+                                  { confirmation: values.get("confirmation") },
+                                );
+                                setSelected(null);
+                                await refresh();
+                                setNotice(result.message);
+                              } catch (error) {
+                                setNotice("Error: " + (error as Error).message);
+                              }
+                            }}
+                          >
+                            <h2>Clear test data</h2>
+                            <p>
+                              Permanently remove test-mode registrations and
+                              payments, including unused registration links.
+                              Live records, admin accounts, settings and audit
+                              history are retained.
+                            </p>
+                            <label>
+                              Type DELETE TEST DATA to confirm
+                              <input
+                                name="confirmation"
+                                required
+                                pattern="DELETE TEST DATA"
+                                autoComplete="off"
+                              />
+                            </label>
+                            <button>Delete all test data</button>
+                          </form>
+                        </>
+                      )}
                       <form
                         className="card"
                         onSubmit={(e) => {
@@ -1103,80 +1109,84 @@ export default function Portal() {
                         />
                         <button className="primary">Save fee</button>
                       </form>
-                      <div className="card">
-                        <h2>Paystack credentials</h2>
-                        <p>
-                          Keys stay on the server. Test and live credentials are
-                          stored separately. Enable live checkout only after
-                          completing your payment tests.
-                        </p>
-                        {(["test", "live"] as const).map((m) => (
-                          <form
-                            key={m}
-                            onSubmit={(e) => {
-                              e.preventDefault();
-                              const v = new FormData(e.currentTarget);
-                              saveSettings("paystack", {
-                                mode: m,
-                                publicKey: v.get("publicKey"),
-                                secretKey: v.get("secretKey"),
-                                activate: v.get("activate") === "on",
-                              });
-                              (
-                                e.currentTarget.elements.namedItem(
-                                  "secretKey",
-                                ) as HTMLInputElement
-                              ).value = "";
-                            }}
-                          >
-                            <h3>{m === "test" ? "Test keys" : "Live keys"}</h3>
-                            <label htmlFor={m + "Public"}>Public key</label>
-                            <input
-                              id={m + "Public"}
-                              name="publicKey"
-                              autoComplete="off"
-                              defaultValue={
-                                m === "test"
-                                  ? state.paystackTestPublicKey
-                                  : state.paystackLivePublicKey
-                              }
-                              placeholder={"pk_" + m + "_…"}
-                            />
-                            <label htmlFor={m + "Secret"}>
-                              Secret key{" "}
-                              {(
-                                m === "test"
-                                  ? state.testSecretSaved
-                                  : state.liveSecretSaved
-                              )
-                                ? "(saved; enter to replace)"
-                                : ""}
-                            </label>
-                            <input
-                              id={m + "Secret"}
-                              name="secretKey"
-                              type="password"
-                              autoComplete="new-password"
-                              placeholder={"sk_" + m + "_…"}
-                            />
-                            <label>
+                      {state.admin.role === "SUPER_ADMIN" && (
+                        <div className="card">
+                          <h2>Paystack credentials</h2>
+                          <p>
+                            Keys stay on the server. Test and live credentials
+                            are stored separately. Enable live checkout only
+                            after completing your payment tests.
+                          </p>
+                          {(["test", "live"] as const).map((m) => (
+                            <form
+                              key={m}
+                              onSubmit={(e) => {
+                                e.preventDefault();
+                                const v = new FormData(e.currentTarget);
+                                saveSettings("paystack", {
+                                  mode: m,
+                                  publicKey: v.get("publicKey"),
+                                  secretKey: v.get("secretKey"),
+                                  activate: v.get("activate") === "on",
+                                });
+                                (
+                                  e.currentTarget.elements.namedItem(
+                                    "secretKey",
+                                  ) as HTMLInputElement
+                                ).value = "";
+                              }}
+                            >
+                              <h3>
+                                {m === "test" ? "Test keys" : "Live keys"}
+                              </h3>
+                              <label htmlFor={m + "Public"}>Public key</label>
                               <input
-                                type="checkbox"
-                                name="activate"
-                                disabled={m === "live" && !state.liveAllowed}
-                              />{" "}
-                              Activate {m} checkout
-                            </label>
-                            <button className="primary">Save {m} keys</button>
-                          </form>
-                        ))}
-                        <p className="notice">
-                          Current checkout: {state.paystackMode}. Live
-                          activation requires HTTPS, email configuration,
-                          completed payment tests and ALLOW_LIVE_PAYMENTS=true
-                          in Hostinger.
-                        </p>
-                      </div>
+                                id={m + "Public"}
+                                name="publicKey"
+                                autoComplete="off"
+                                defaultValue={
+                                  m === "test"
+                                    ? state.paystackTestPublicKey
+                                    : state.paystackLivePublicKey
+                                }
+                                placeholder={"pk_" + m + "_…"}
+                              />
+                              <label htmlFor={m + "Secret"}>
+                                Secret key{" "}
+                                {(
+                                  m === "test"
+                                    ? state.testSecretSaved
+                                    : state.liveSecretSaved
+                                )
+                                  ? "(saved; enter to replace)"
+                                  : ""}
+                              </label>
+                              <input
+                                id={m + "Secret"}
+                                name="secretKey"
+                                type="password"
+                                autoComplete="new-password"
+                                placeholder={"sk_" + m + "_…"}
+                              />
+                              <label>
+                                <input
+                                  type="checkbox"
+                                  name="activate"
+                                  disabled={m === "live" && !state.liveAllowed}
+                                />{" "}
+                                Activate {m} checkout
+                              </label>
+                              <button className="primary">Save {m} keys</button>
+                            </form>
+                          ))}
+                          <p className="notice">
+                            Current checkout: {state.paystackMode}. Live
+                            activation requires HTTPS, email configuration,
+                            completed payment tests and ALLOW_LIVE_PAYMENTS=true
+                            in Hostinger.
+                          </p>
+                        </div>
+                      )}
                     </div>
                   )}
                   {tab === "users" && state.admin.role === "SUPER_ADMIN" && (
@@ -1319,7 +1329,7 @@ export default function Portal() {
                       <button className="primary">Change password</button>
                     </form>
                   )}
-                  {tab === "builder" && state.admin.role === "SUPER_ADMIN" && (
+                  {tab === "builder" && (
                     <div className="card">
                       <h2>Form builder</h2>
                       <p>

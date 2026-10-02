@@ -10,8 +10,14 @@ import { audit, transaction } from "../../../../server/database";
 import { validateForm } from "../../../../server/form";
 export async function POST(req: Request) {
   try {
-    const actor = await requireAdmin(true),
+    const actor = await requireAdmin(),
       body = await readJson(req);
+    if (
+      actor.role !== "SUPER_ADMIN" &&
+      body.kind !== "fee" &&
+      body.kind !== "form"
+    )
+      throw new HttpError("Super Admin access required for this setting", 403);
     if (body.kind === "fee") {
       const fee = Number(body.fee);
       if (!Number.isInteger(fee) || fee < 1 || fee > 10000000)

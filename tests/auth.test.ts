@@ -1,3 +1,4 @@
+import { defaultSections } from "../server/form";
 import { test } from "node:test";
 import assert from "node:assert/strict";
 const base = process.env.FEDMOGA_APP_TEST_URL;
@@ -86,10 +87,60 @@ test(
       await call("/api/admin/state", undefined, admin)
     ).json();
     assert.deepEqual(limited.admins, []);
+    const revised = structuredClone(defaultSections);
+    revised[0].title = "Personal details";
+    assert.equal(
+      (
+        await call(
+          "/api/admin/settings",
+          { kind: "form", form: { sections: revised } },
+          admin,
+        )
+      ).status,
+      200,
+    );
+    const config = await (await call("/api/config")).json();
+    assert.equal(config.form.sections[0].title, "Personal details");
+    assert.equal(
+      (
+        await call(
+          "/api/admin/settings",
+          { kind: "form", form: { sections: [] } },
+          admin,
+        )
+      ).status,
+      400,
+    );
+    assert.equal(
+      (await call("/api/admin/settings", { kind: "fee", fee: 0 }, admin))
+        .status,
+      400,
+    );
+    assert.equal(
+      (
+        await call(
+          "/api/admin/settings",
+          {
+            kind: "paystack",
+            mode: "test",
+            publicKey: "pk_test_forbidden123",
+            secretKey: "sk_test_forbidden123",
+            activate: true,
+          },
+          admin,
+        )
+      ).status,
+      403,
+    );
+    assert.equal(
+      (await call("/api/admin/settings", { kind: "unexpected" }, admin)).status,
+      403,
+    );
+
     assert.equal(
       (await call("/api/admin/settings", { kind: "fee", fee: 6000 }, admin))
         .status,
-      403,
+      200,
     );
     assert.equal(
       (
@@ -101,6 +152,7 @@ test(
       ).status,
       403,
     );
+    assert.equal((await (await call("/api/config")).json()).fee, 6000);
     assert.equal(
       (await call("/api/admin/settings", { kind: "fee", fee: 6000 }, root))
         .status,
